@@ -5,50 +5,78 @@ import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 
 # ---------------------------------------------------------
-# 1. Setup Data Paths
+# 1. Setup Correct Data Paths
 # ---------------------------------------------------------
-analysis_dir = "./dset/derivatives/hb-conn"
-decoding_dir = "./decoding"
+data_dir = "./dset"
+deriv_dir = op.join(data_dir, "derivatives")
+analysis_dir = op.join(deriv_dir, "hb-conn")
 
-# Assume you ran Gradec/Nimare on both maps and saved the output tables
-# If you haven't saved them yet, do so using: df.to_csv('1s_drawn_decoding.csv')
-drawn_decoding_fn = op.join(decoding_dir, "1s_drawn_neuroquery_terms.csv")
-atlas_decoding_fn = op.join(decoding_dir, "1s_atlas_neuroquery_terms.csv")
+# This matches the folder where your modified plot-connectivity loop saves CSV outputs
+decoding_results_dir = op.join(analysis_dir, "decoding_results")
 
-# ---------------------------------------------------------
-# 2. Load and Align Decoding Profiles
-# ---------------------------------------------------------
-# Let's assume files have columns: 'Term' and 'Correlation' (or 'Weight')
-df_drawn = pd.read_csv(drawn_decoding_fn)
-df_atlas = pd.read_csv(atlas_decoding_fn)
-
-# Rename columns to avoid collision during merge
-df_drawn = df_drawn.rename(columns={'Correlation': 'Drawn_r'})
-df_atlas = df_atlas.rename(columns={'Correlation': 'Atlas_r'})
-
-# Merge tables on the semantic Term to ensure perfect alignment
-merged_decoding = pd.merge(df_drawn, df_atlas, on="Term")
-
-# ---------------------------------------------------------
-# 3. Calculate Meta-Similarity Statistics
-# ---------------------------------------------------------
-# Metric 1: Pearson correlation across the whole language landscape
-profile_pearson, p_val_p = pearsonr(merged_decoding['Drawn_r'], merged_decoding['Atlas_r'])
-
-# Metric 2: Spearman correlation (Checks if the absolute rank order of top terms matches)
-profile_spearman, p_val_s = spearmanr(merged_decoding['Drawn_r'], merged_decoding['Atlas_r'])
+# Dictionary holding the paths for 1-Sample and 2-Sample decoding tables
+contrasts_to_compare = {
+    "1s": {
+        "name": "1-Sample t-Test (Group Mean Connectivity)",
+        "drawn": op.join(decoding_results_dir, "1s_drawn_neuroquery_terms.csv"),
+        "atlas": op.join(decoding_results_dir, "1s_atlas_neuroquery_terms.csv"),
+        "output": op.join(analysis_dir, "decoding_landscape_comparison_1s.csv")
+    },
+    "2s": {
+        "name": "2-Sample t-Test (Group Difference Map)",
+        "drawn": op.join(decoding_results_dir, "2s_drawn_neuroquery_terms.csv"),
+        "atlas": op.join(decoding_results_dir, "2s_atlas_neuroquery_terms.csv"),
+        "output": op.join(analysis_dir, "decoding_landscape_comparison_2s.csv")
+    }
+}
 
 # ---------------------------------------------------------
-# 4. Isolate Top Functional Hits for Visual Verification
+# 2. Process and Compare Decoding Profiles
 # ---------------------------------------------------------
-# Sort by Drawn strength to inspect the top cognitive drivers
-top_hits = merged_decoding.sort_values(by="Drawn_r", ascending=False).head(10)
-
-print("=== FUNCTIONAL DECODING LANDSCAPE SIMILARITY ===")
-print(f"Profile Semantic Pearson r  : {profile_pearson:.4f} (p = {p_val_p:.3e})")
-print(f"Profile Rank Spearman rho : {profile_spearman:.4f} (p = {p_val_s:.3e})")
-print("\nTop 10 Overlapping Cognitive Terms:")
-print(top_hits[['Term', 'Drawn_r', 'Atlas_r']].to_string(index=False))
-
-# Save comparison data
-merged_decoding.to_csv(op.join(analysis_dir, "decoding_landscape_comparison.csv"), index=False)
+for test_key, paths in contrasts_to_compare.items():
+    print(f"\n==================================================")
+    print(f"RUNNING DECODING SIMILARITY FOR: {paths['name']}")
+    print(f"==================================================")
+    
+    # Verification check to make sure you ran the plot script first
+    if not op.exists(paths["drawn"]) or not op.exists(paths["atlas"]):
+        print(f"Skipping {test_key}: Decoding files not found in {decoding_results_dir}.")
+        print(f"Make sure to execute your modified plot-connectivity code first to generate them.")
+        continue
+        
+    # Load dataframes
+    df_drawn = pd.read_csv(paths["drawn"])
+    df_atlas = pd.read_csv(paths["atlas"])
+    
+    # Identify the column containing the correlation metric (usually named 'r' or 'Correlation')
+    # This automatically detects NiMare or NiMQ standard column schemas
+    drawn_metric_col = 'r' if 'r' in df_drawn.columns else 'Correlation'
+    atlas_metric_col = 'r' if 'r' in df_atlas.columns else 'Correlation'
+    
+    # Rename columns to avoid name collisions during merge
+    df_drawn = df_drawn[['Term', drawn_metric_col]].rename(columns={drawn_metric_col: 'Drawn_r'})
+    df_atlas = df_atlas[['Term', atlas_metric_col]].rename(columns={atlas_metric_col: 'Atlas_r'})
+    
+    # Inner merge on 'Term' to ensure word-for-word alignment across semantic profiles
+    merged_decoding = pd.merge(df_drawn, df_atlas, on="Term")
+    
+    # 3. Calculate Global Semantic Profiles Similarity Metrics
+    # Metric A: Pearson r (Evaluates if overall loading magnitudes align)
+    profile_pearson, p_val_p = pearsonr(merged_decoding['Drawn_r'], merged_decoding['Atlas_r'])
+    
+    # Metric B: Spearman rho (Evaluates if the precise rank order of terms is preserved)
+    profile_spearman, p_val_s = spearmanr(merged_decoding['Drawn_r'], merged_decoding['Atlas_r'])
+    
+    # 4. Save and Display Results
+    # Create an index tracking the absolute difference between term weights
+    merged_decoding['Absolute_Discrepancy'] = (merged_decoding['Drawn_r'] - merged_decoding['Atlas_r']).abs()
+    merged_decoding = merged_decoding.sort_values(by="Drawn_r", ascending=False)
+    
+    merged_decoding.to_csv(paths["output"], index=False)
+    
+    print(f"Saved complete comparative array to: {paths['output']}")
+    print(f" -> Profile Semantic Pearson r  : {profile_pearson:.4f} (p = {p_val_p:.3e})")
+    print(f" -> Profile Rank Spearman rho : {profile_spearman:.4f} (p = {p_val_s:.3e})")
+    
+    print("\nTop 5 Cognitive Term Mappings (Ranked by Drawn Strength):")
+    print(merged_decoding[['Term', 'Drawn_r', 'Atlas_r', 'Absolute_Discrepancy']].head(5).to_string(index=False))
