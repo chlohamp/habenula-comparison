@@ -18,6 +18,7 @@ group_atlas_dir = op.join(analysis_dir, "group-atlas/habenula")
 
 # HCPex Atlas path
 atlas_hcpex_filename = op.join(data_dir, "HCPex_2mm", "HCPex_2mm.nii")
+hcpex_labels_filename = op.join(data_dir, "HCPex_2mm", "HCPex_2mm.csv")
 
 # Note: We use the UNTHRESHOLDED maps here to accurately capture the 
 # full variance of connectivity values (Z-scores) within each region.
@@ -35,10 +36,16 @@ maps_to_process = {
 }
 
 # ---------------------------------------------------------
-# 2. Main Processing Loop
+# 2. Load HCPex Atlas and Labels
 # ---------------------------------------------------------
 print(f"Loading base HCPex atlas from {atlas_hcpex_filename}...")
 hcpex_img = image.load_img(atlas_hcpex_filename)
+
+# Load HCPex labels
+print(f"Loading HCPex labels from {hcpex_labels_filename}...")
+hcpex_labels_df = pd.read_csv(hcpex_labels_filename)
+# Create a mapping from Index to Full Label
+label_mapping = dict(zip(hcpex_labels_df['Index'], hcpex_labels_df['Full Label']))
 
 for test_name, paths in maps_to_process.items():
     print(f"\n=========================================")
@@ -96,6 +103,7 @@ for test_name, paths in maps_to_process.items():
         # Append data row
         conn_results.append({
             "HCPex_Region_ID": region_id,
+            "Full_Label": label_mapping.get(region_id, "Unknown"),
             "Voxel_Count": voxel_count,
             "Mean_Z_Drawn": mean_z_drawn,
             "Mean_Z_Atlas": mean_z_atlas,

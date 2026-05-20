@@ -18,6 +18,7 @@ group_atlas_dir = op.join(analysis_dir, "group-atlas/habenula")
 
 # HCPex Atlas path
 atlas_hcpex_filename = op.join(data_dir, "HCPex_2mm", "HCPex_2mm.nii")
+hcpex_labels_filename = op.join(data_dir, "HCPex_2mm", "HCPex_2mm.csv")
 
 # Define both map types in a dictionary to process them dynamically
 maps_to_process = {
@@ -34,10 +35,16 @@ maps_to_process = {
 }
 
 # ---------------------------------------------------------
-# 2. Load HCPex Atlas Base Image
+# 2. Load HCPex Atlas Base Image and Labels
 # ---------------------------------------------------------
 print(f"Loading base HCPex atlas from {atlas_hcpex_filename}...")
 hcpex_img = image.load_img(atlas_hcpex_filename)
+
+# Load HCPex labels
+print(f"Loading HCPex labels from {hcpex_labels_filename}...")
+hcpex_labels_df = pd.read_csv(hcpex_labels_filename)
+# Create a mapping from Index to Full Label
+label_mapping = dict(zip(hcpex_labels_df['Index'], hcpex_labels_df['Full Label']))
 
 # ---------------------------------------------------------
 # 3. Loop and Generate Regional Breakdown Tables
@@ -106,6 +113,7 @@ for test_name, paths in maps_to_process.items():
         # Append data row
         results.append({
             "HCPex_Region_ID": region_id,
+            "Full_Label": label_mapping.get(region_id, "Unknown"),
             "Total_Region_Voxels": voxel_count,
             "Drawn_Active_Voxels": drawn_region_bin.sum(),
             "Atlas_Active_Voxels": atlas_region_bin.sum(),
