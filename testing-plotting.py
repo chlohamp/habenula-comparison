@@ -44,6 +44,7 @@ for test in contrasts:
         df['Rank_Spearman'] = df['Conn_Spearman_rho'].rank(ascending=False)
         df['Rank_Dist'] = df['CoM_Distance_mm'].rank(ascending=True)
         df['Rank_Z'] = df['Absolute_Z_Difference'].rank(ascending=True)
+        df['Mean_Z'] = df['Mean_Z_Drawn'].rank(ascending=True)
         
         df['Region_Label'] = df['Full_Label']
         
@@ -54,6 +55,8 @@ for test in contrasts:
             'Dice_Coefficient': ("Dice Overlap Coefficient", "Higher is Better", "steelblue", False),
             'CoM_Distance_mm': ("Center of Mass Distance (mm)", "Lower is Better", "steelblue", True),
             'Hausdorff_Distance_mm': ("Hausdorff Distance (mm)", "Lower is Better", "steelblue", True),
+            'Mean_Z_Drawn': ("Mean Z-Score (Drawn ROI)", "Higher is Better", "darkgreen", False),
+            'Mean_Z_Atlas': ("Mean Z-Score (Atlas ROI)", "Higher is Better", "darkblue", False),
             'Absolute_Z_Difference': ("Absolute Delta Z-Score", "Lower is Better", "steelblue", True),
             'Conn_Spearman_rho': ("Unthresholded Spearman rho", "Higher is Better", "steelblue", False)
         }
