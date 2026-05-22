@@ -44,7 +44,6 @@ for test in contrasts:
         df['Rank_Spearman'] = df['Conn_Spearman_rho'].rank(ascending=False)
         df['Rank_Dist'] = df['CoM_Distance_mm'].rank(ascending=True)
         df['Rank_Z'] = df['Absolute_Z_Difference'].rank(ascending=True)
-        df['Total_Similarity_Rank'] = df['Rank_Dice'] + df['Rank_Spearman'] + df['Rank_Dist'] + df['Rank_Z']
         
         df['Region_Label'] = df['Full_Label']
         
@@ -56,8 +55,7 @@ for test in contrasts:
             'CoM_Distance_mm': ("Center of Mass Distance (mm)", "Lower is Better", "steelblue", True),
             'Hausdorff_Distance_mm': ("Hausdorff Distance (mm)", "Lower is Better", "steelblue", True),
             'Absolute_Z_Difference': ("Absolute Delta Z-Score", "Lower is Better", "steelblue", True),
-            'Conn_Spearman_rho': ("Unthresholded Spearman rho", "Higher is Better", "steelblue", False),
-            'Total_Similarity_Rank': ("Consensus Total Similarity Rank Score", "Lower is Better", "slategrey", True)
+            'Conn_Spearman_rho': ("Unthresholded Spearman rho", "Higher is Better", "steelblue", False)
         }
         
         for metric, (title, subtitle, color_name, asc_order) in regional_metrics.items():
