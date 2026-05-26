@@ -136,6 +136,16 @@ for test in contrasts:
         fig_height = max(6, len(df_sorted) * 0.22)
         fig, ax = plt.subplots(figsize=(7, fig_height))
         
+        # Draw connecting lines between Atlas and Drawn ROI points for each region
+        for i, region in enumerate(sorted_region_order):
+            region_data = melted_z[melted_z['Region_Label'] == region]
+            if len(region_data) == 2:
+                atlas_z = region_data[region_data['ROI_Type'] == 'Atlas ROI']['Mean_Z_Score'].values[0]
+                drawn_z = region_data[region_data['ROI_Type'] == 'Drawn ROI']['Mean_Z_Score'].values[0]
+                # Use red line if Drawn ROI has larger mean Z than Atlas ROI, otherwise black
+                line_color = 'red' if drawn_z > atlas_z else 'black'
+                ax.plot([atlas_z, drawn_z], [i, i], color=line_color, linewidth=2.5, zorder=1)
+        
         # Overlay both ROI types on same plot
         sns.stripplot(
             data=melted_z,
