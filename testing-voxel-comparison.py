@@ -3,6 +3,7 @@ import os.path as op
 import numpy as np
 import pandas as pd
 from nilearn import image
+from nilearn.reporting import get_clusters_table
 from scipy.stats import spearmanr
 
 # ---------------------------------------------------------
@@ -32,13 +33,20 @@ maps_to_process = {
 }
 
 # ---------------------------------------------------------
-# 2. Voxel-Based Analysis
+# 2. Cluster Extraction Parameters (Adjust as needed)
+# ---------------------------------------------------------
+# Adjust cluster_stat_thresh to match the statistical values in your maps (e.g., Z-score or t-value)
+cluster_stat_thresh = 3.1  # Standard threshold corresponding to p < 0.001 uncorrected
+min_cluster_voxels = 10    # Minimum cluster extent threshold in voxels
+
+# ---------------------------------------------------------
+# 3. Voxel & Cluster-Based Analysis
 # ---------------------------------------------------------
 results = []
 
 for test_name, paths in maps_to_process.items():
     print(f"\n{'='*60}")
-    print(f"VOXEL-BASED ANALYSIS FOR {test_name.upper()} Maps")
+    print(f"ANALYSIS FOR {test_name.upper()} MAPS")
     print(f"{'='*60}")
     
     # Check if files exist
@@ -55,7 +63,7 @@ for test_name, paths in maps_to_process.items():
     drawn_thresholded = (drawn_thresh_img.get_fdata() != 0).astype(int)
     atlas_thresholded = (atlas_thresh_img.get_fdata() != 0).astype(int)
     
-    # Load unthresholded maps for Spearman calculation
+    # Load unthresholded maps for Spearman and Nilearn cluster extraction
     drawn_unthresh_img = image.load_img(paths["drawn_unthresholded"])
     atlas_unthresh_img = image.load_img(paths["atlas_unthresholded"])
     
@@ -92,6 +100,41 @@ for test_name, paths in maps_to_process.items():
     
     print(f"\nConnectivity Effect Sizes (Unthresholded):")
     print(f"  Spearman (rho) Correlation: {spearman_rho:.4f} (P < 0.001)")
+    
+    # ===== DATA-DRIVEN CLUSTER EXTRACTION (NILEARN) =====
+    print(f"\nData-Driven Cluster Extraction (Nilearn):")
+    
+    # Extract clusters for Hand-Drawn method
+    try:
+        drawn_cluster_table = get_clusters_table(
+            stat_img=drawn_unthresh_img,
+            stat_threshold=cluster_stat_thresh,
+            cluster_threshold=min_cluster_voxels,
+            two_sided=True  # Handles both positive and negative connectivity clusters
+        )
+        print(f"\n  [Hand-Drawn Seed Clusters]")
+        if not drawn_cluster_table.empty:
+            print(drawn_cluster_table.to_string(index=False))
+        else:
+            print("    No clusters survived thresholding.")
+    except Exception as e:
+        print(f"  Error extracting Hand-Drawn clusters: {e}")
+        
+    # Extract clusters for Automated Atlas method
+    try:
+        atlas_cluster_table = get_clusters_table(
+            stat_img=atlas_unthresh_img,
+            stat_threshold=cluster_stat_thresh,
+            cluster_threshold=min_cluster_voxels,
+            two_sided=True
+        )
+        print(f"\n  [Automated Atlas Seed Clusters]")
+        if not atlas_cluster_table.empty:
+            print(atlas_cluster_table.to_string(index=False))
+        else:
+            print("    No clusters survived thresholding.")
+    except Exception as e:
+        print(f"  Error extracting Atlas clusters: {e}")
     
     # Store results
     results.append({
