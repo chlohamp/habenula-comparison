@@ -86,6 +86,94 @@ for test in contrasts:
             plt.close()
 
 # =========================================================
+# PART A.5: Combined Mean Z-Score Plots (Atlas ROI Order)
+# =========================================================
+for test in contrasts:
+    print(f"Processing overlaid Mean Z-Score plot for {test.upper()}...")
+    
+    overlap_csv = op.join(analysis_dir, f"hcpex_region_breakdown_{test}.csv")
+    distance_csv = op.join(analysis_dir, f"hcpex_distance_metrics_{test}.csv")
+    conn_csv = op.join(analysis_dir, f"hcpex_connectivity_comparison_{test}.csv")
+    
+    if op.exists(overlap_csv) and op.exists(distance_csv) and op.exists(conn_csv):
+        df_overlap = pd.read_csv(overlap_csv)
+        df_dist = pd.read_csv(distance_csv)
+        df_conn = pd.read_csv(conn_csv).rename(columns={
+            'Spearman_rho': 'Conn_Spearman_rho', 
+            'Pearson_r': 'Conn_Pearson_r'
+        })
+        
+        # Merge matrices and drop background regions with no data
+        df = pd.merge(df_overlap, df_dist, on="HCPex_Region_ID")
+        df = pd.merge(df, df_conn, on="HCPex_Region_ID").dropna(
+            subset=['Dice_Coefficient', 'CoM_Distance_mm', 'Conn_Spearman_rho']
+        )
+        
+        df['Region_Label'] = df['Full_Label']
+        
+        # Sort by Atlas Mean Z-Score (descending: higher is better at top)
+        df_sorted = df.sort_values(by='Mean_Z_Atlas', ascending=False)
+        
+        # Capture the sorted order of regions to preserve it during melting
+        sorted_region_order = df_sorted['Region_Label'].tolist()
+        
+        # Pivot to long format for overlay comparison
+        melted_z = pd.melt(
+            df_sorted,
+            id_vars=['Region_Label'],
+            value_vars=['Mean_Z_Atlas', 'Mean_Z_Drawn'],
+            var_name='ROI_Type',
+            value_name='Mean_Z_Score'
+        )
+        
+        # Clean legend labels
+        melted_z['ROI_Type'] = melted_z['ROI_Type'].map({
+            'Mean_Z_Atlas': 'Atlas ROI',
+            'Mean_Z_Drawn': 'Drawn ROI'
+        })
+        
+        # Dynamically scale figure height
+        fig_height = max(6, len(df_sorted) * 0.22)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_z,
+            x='Mean_Z_Score',
+            y='Region_Label',
+            hue='ROI_Type',
+            order=sorted_region_order,  # Preserve atlas ROI order
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': 'darkblue', 'Drawn ROI': 'darkgreen'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Mean Z-Score Comparison by Region ({test.upper()})\nSorted by Atlas ROI Mean Z-Score",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Mean Z-Score", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Style and place the legend
+        ax.legend(title="ROI Definition Method", loc="lower right", frameon=True, facecolor="w")
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png = op.join(analysis_dir, f"plot_mean_z_overlaid_comparison_{test}.png")
+        plt.savefig(output_png, bbox_inches="tight", dpi=300)
+        plt.close()
+
+print("Overlaid Mean Z-Score comparison figures generated successfully!")
+
+# =========================================================
 # PART B: NeuroQuery Functional Decoding Alignment Metrics
 # =========================================================
 for test in contrasts:
