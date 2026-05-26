@@ -5,6 +5,7 @@ import pandas as pd
 import nibabel as nib
 from nilearn import image
 from scipy.stats import pearsonr, spearmanr
+from scipy.ndimage import center_of_mass
 
 # ---------------------------------------------------------
 # 1. Define Paths 
@@ -66,12 +67,18 @@ for test_name, paths in maps_to_process.items():
     drawn_data = drawn_img.get_fdata()
     atlas_data = atlas_img.get_fdata()
     hcpex_data = np.rint(hcpex_resampled.get_fdata()).astype(int)
+    
+    # Get affine for voxel to mm conversion
+    affine = drawn_img.affine
 
     # Get unique regions
     regions = np.unique(hcpex_data)
     regions = regions[regions > 0]
 
     conn_results = []
+    
+    # Define threshold for thresholded activation maps (p < 0.001 ≈ Z > 3.1)
+    z_threshold = 3.1
 
     for region_id in regions:
         region_mask = (hcpex_data == region_id)
@@ -84,20 +91,62 @@ for test_name, paths in maps_to_process.items():
         z_drawn = drawn_data[region_mask]
         z_atlas = atlas_data[region_mask]
         
+        # Get 3D coordinates of voxels in the region
+        region_coords = np.where(region_mask)
+        
+        # ===== SPATIAL SIMILARITY (THRESHOLDED) =====
+        # Dice Similarity Coefficient
+        drawn_thresholded = (np.abs(z_drawn) > z_threshold).astype(int)
+        atlas_thresholded = (np.abs(z_atlas) > z_threshold).astype(int)
+        
+        intersection = np.sum(drawn_thresholded & atlas_thresholded)
+        union = np.sum(drawn_thresholded) + np.sum(atlas_thresholded)
+        
+        if union > 0:
+            dice = (2.0 * intersection) / union
+        else:
+            dice = 0.0
+        
+        # ===== SPATIAL CENTERING: CENTER OF MASS DISTANCE =====
+        # Calculate CoM in voxel space using full 3D coordinates
+        drawn_coords = np.array(region_coords)[:, drawn_thresholded.astype(bool)]
+        atlas_coords = np.array(region_coords)[:, atlas_thresholded.astype(bool)]
+        
+        if drawn_coords.shape[1] > 0:
+            drawn_com_voxel = drawn_coords.mean(axis=1)
+        else:
+            drawn_com_voxel = None
+            
+        if atlas_coords.shape[1] > 0:
+            atlas_com_voxel = atlas_coords.mean(axis=1)
+        else:
+            atlas_com_voxel = None
+        
+        # Convert to mm using affine
+        if drawn_com_voxel is not None and atlas_com_voxel is not None:
+            # Convert from voxel to mm coordinates
+            drawn_com_mm = affine[:3, :3] @ drawn_com_voxel + affine[:3, 3]
+            atlas_com_mm = affine[:3, :3] @ atlas_com_voxel + affine[:3, 3]
+            
+            com_distance = np.linalg.norm(drawn_com_mm - atlas_com_mm)
+        else:
+            com_distance = np.nan
+        
+        # ===== CONNECTIVITY EFFECT SIZES (UNTHRESHOLDED) =====
         # 1. Calculate Mean Connectivity (Z-score) for the region
         mean_z_drawn = np.nanmean(z_drawn)
         mean_z_atlas = np.nanmean(z_atlas)
         
-        # Calculate the absolute magnitude of the difference between the means
-        mean_difference = abs(mean_z_drawn - mean_z_atlas)
+        # Calculate percent difference relative to atlas
+        if mean_z_atlas != 0:
+            percent_difference = (abs(mean_z_drawn - mean_z_atlas) / abs(mean_z_atlas)) * 100
+        else:
+            percent_difference = 0.0
         
-        # 2. Calculate Pattern Similarity (Correlation of voxels within the region)
-        # We need >1 voxel and non-zero standard deviation to run correlations
+        # 2. Calculate Spearman rank-order correlation
         if len(z_drawn) > 1 and np.std(z_drawn) > 0 and np.std(z_atlas) > 0:
-            pearson_r, _ = pearsonr(z_drawn, z_atlas)
             spearman_rho, _ = spearmanr(z_drawn, z_atlas)
         else:
-            pearson_r = np.nan
             spearman_rho = np.nan
             
         # Append data row
@@ -105,20 +154,22 @@ for test_name, paths in maps_to_process.items():
             "HCPex_Region_ID": region_id,
             "Full_Label": label_mapping.get(region_id, "Unknown"),
             "Voxel_Count": voxel_count,
-            "Mean_Z_Drawn": mean_z_drawn,
+            "Dice_Coefficient": dice,
+            "CoM_Distance_mm": com_distance,
             "Mean_Z_Atlas": mean_z_atlas,
-            "Absolute_Z_Difference": mean_difference,
-            "Pearson_r": pearson_r,
+            "Mean_Z_Drawn": mean_z_drawn,
+            "Percent_Difference": percent_difference,
             "Spearman_rho": spearman_rho
         })
 
     # Save to CSV
     df_conn = pd.DataFrame(conn_results)
     
-    # Optional: Sort by the regions with the largest difference in connectivity
-    df_conn = df_conn.sort_values(by="Absolute_Z_Difference", ascending=False)
+    # Sort by Mean_Z_Atlas (descending: strongest connectivity first)
+    df_conn = df_conn.sort_values(by="Mean_Z_Atlas", ascending=False)
     
     df_conn.to_csv(paths["output"], index=False)
     print(f"Saved regional connectivity comparison to: {paths['output']}")
-    print("Top 3 regions with largest connectivity differences:")
-    print(df_conn.head(3))
+    print("\nTop 5 regions (sorted by Mean Z-score of Atlas ROI):")
+    print(df_conn[["Full_Label", "Voxel_Count", "Dice_Coefficient", "CoM_Distance_mm", 
+                   "Mean_Z_Atlas", "Mean_Z_Drawn", "Percent_Difference", "Spearman_rho"]].head(5).to_string(index=False))
