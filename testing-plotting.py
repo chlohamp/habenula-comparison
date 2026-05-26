@@ -249,6 +249,100 @@ for test in contrasts:
 print("\nAll customized standalone metric figures generated and saved successfully!")
 
 # =========================================================
+# PART B.5: Combined Decoding Plots (Atlas Strength Order)
+# =========================================================
+for test in contrasts:
+    print(f"Processing overlaid Decoding plot (sorted by Atlas) for {test.upper()}...")
+    
+    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_terms.csv")
+    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_terms.csv")
+    
+    if op.exists(drawn_path) and op.exists(atlas_path):
+        df_drawn = pd.read_csv(drawn_path)
+        df_atlas = pd.read_csv(atlas_path)
+        
+        d_col = 'r' if 'r' in df_drawn.columns else 'Correlation'
+        a_col = 'r' if 'r' in df_atlas.columns else 'Correlation'
+        
+        df_drawn = df_drawn[['Term', d_col]].rename(columns={d_col: 'Drawn_r'})
+        df_atlas = df_atlas[['Term', a_col]].rename(columns={a_col: 'Atlas_r'})
+        
+        # Merge data
+        merged_dec = pd.merge(df_drawn, df_atlas, on="Term")
+        
+        # Sort by Atlas_r (descending: strongest at top)
+        merged_dec = merged_dec.sort_values(by='Atlas_r', ascending=False)
+        
+        # Capture the sorted order of terms to preserve it during melting
+        sorted_term_order = merged_dec['Term'].tolist()
+        
+        # Pivot to long format for overlay comparison
+        melted_dec = pd.melt(
+            merged_dec,
+            id_vars=['Term'],
+            value_vars=['Atlas_r', 'Drawn_r'],
+            var_name='ROI_Type',
+            value_name='Correlation'
+        )
+        
+        # Clean legend labels
+        melted_dec['ROI_Type'] = melted_dec['ROI_Type'].map({
+            'Atlas_r': 'Atlas ROI',
+            'Drawn_r': 'Drawn ROI'
+        })
+        
+        # Dynamically scale figure height
+        fig_height = max(6, len(merged_dec) * 0.22)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Draw connecting lines between Atlas and Drawn ROI points for each term
+        for i, term in enumerate(sorted_term_order):
+            term_data = melted_dec[melted_dec['Term'] == term]
+            if len(term_data) == 2:
+                atlas_r = term_data[term_data['ROI_Type'] == 'Atlas ROI']['Correlation'].values[0]
+                drawn_r = term_data[term_data['ROI_Type'] == 'Drawn ROI']['Correlation'].values[0]
+                # Use red line if Drawn ROI has larger correlation than Atlas ROI, otherwise black
+                line_color = "#9A9B9A" if drawn_r > atlas_r else 'black'
+                ax.plot([atlas_r, drawn_r], [i, i], color=line_color, linewidth=2.5, zorder=1)
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_dec,
+            x='Correlation',
+            y='Term',
+            hue='ROI_Type',
+            order=sorted_term_order,  # Preserve atlas order
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Functional Decoding Correlation Comparison ({test.upper()})\nSorted by Atlas ROI Correlation Strength",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Correlation Coefficient (r)", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Style and place the legend
+        ax.legend(title="ROI Definition Method", loc="lower right", frameon=True, facecolor="w")
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png = op.join(analysis_dir, f"plot_decoding_overlaid_atlas_order_{test}.png")
+        plt.savefig(output_png, bbox_inches="tight", dpi=300)
+        plt.close()
+
+print("Overlaid decoding plots (sorted by Atlas) generated successfully!")
+
+# =========================================================
 # PART B: NeuroQuery Functional Decoding Alignment Metrics
 # =========================================================
 for test in contrasts:
