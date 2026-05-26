@@ -15,6 +15,9 @@ decoding_results_dir = op.join(analysis_dir, "decoding_results")
 contrasts = ["1s", "2s"]
 sns.set_theme(style="whitegrid")
 
+# Load the HCPex atlas mapping to get proper full names
+hcpex_atlas = pd.read_csv("./dset/HCPex_2mm/HCPex_2mm.csv")
+
 # =========================================================
 # PART A: HCPex Regional Connectivity Alignment Metrics
 # =========================================================
@@ -39,6 +42,9 @@ for test in contrasts:
             subset=['Dice_Coefficient', 'CoM_Distance_mm', 'Conn_Spearman_rho']
         )
         
+        # Merge with HCPex atlas to get proper full names
+        df = pd.merge(df, hcpex_atlas[['Index', 'Proper Full Name']], left_on='HCPex_Region_ID', right_on='Index', how='left')
+        
         # Calculate Consensus Ranks
         df['Rank_Dice'] = df['Dice_Coefficient'].rank(ascending=False)
         df['Rank_Spearman'] = df['Conn_Spearman_rho'].rank(ascending=False)
@@ -46,7 +52,7 @@ for test in contrasts:
         df['Rank_Z'] = df['Absolute_Z_Difference'].rank(ascending=True)
         df['Mean_Z'] = df['Mean_Z_Drawn'].rank(ascending=True)
         
-        df['Region_Label'] = df['Full_Label']
+        df['Region_Label'] = df['Proper Full Name']
         
         # Define metric parameters: (Title, Subtitle, Color, Ascending_Sort_Order)
         # For Dice and Spearman: Higher is Better -> Sort Descending (ascending=False)
@@ -109,7 +115,10 @@ for test in contrasts:
             subset=['Dice_Coefficient', 'CoM_Distance_mm', 'Conn_Spearman_rho']
         )
         
-        df['Region_Label'] = df['Full_Label']
+        # Merge with HCPex atlas to get proper full names
+        df = pd.merge(df, hcpex_atlas[['Index', 'Proper Full Name']], left_on='HCPex_Region_ID', right_on='Index', how='left')
+        
+        df['Region_Label'] = df['Proper Full Name']
         
         # Sort by Atlas Mean Z-Score (descending: higher is better at top)
         df_sorted = df.sort_values(by='Mean_Z_Atlas', ascending=False)
