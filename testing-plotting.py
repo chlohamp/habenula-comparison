@@ -143,7 +143,7 @@ for test in contrasts:
                 atlas_z = region_data[region_data['ROI_Type'] == 'Atlas ROI']['Mean_Z_Score'].values[0]
                 drawn_z = region_data[region_data['ROI_Type'] == 'Drawn ROI']['Mean_Z_Score'].values[0]
                 # Use red line if Drawn ROI has larger mean Z than Atlas ROI, otherwise black
-                line_color = 'red' if drawn_z > atlas_z else 'black'
+                line_color = "#9A9B9A" if drawn_z > atlas_z else 'black'
                 ax.plot([atlas_z, drawn_z], [i, i], color=line_color, linewidth=2.5, zorder=1)
         
         # Overlay both ROI types on same plot
@@ -156,7 +156,7 @@ for test in contrasts:
             size=8,
             orient="h",
             jitter=False,
-            palette={'Atlas ROI': 'darkblue', 'Drawn ROI': 'darkgreen'},
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
             linewidth=0.8,
             edgecolor="w",
             alpha=0.85,
