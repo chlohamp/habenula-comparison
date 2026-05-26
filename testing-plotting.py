@@ -273,8 +273,21 @@ for test in contrasts:
         # Sort by Atlas_r (descending: strongest at top)
         merged_dec = merged_dec.sort_values(by='Atlas_r', ascending=False)
         
+        # Function to extract and format the last 3 words from term
+        def format_term(term):
+            """Extract the last 3 words separated by _ and join with commas"""
+            parts = term.split('_')
+            # Take the last 3 parts and join with commas and spaces
+            return ", ".join(parts[-3:])
+        
         # Capture the sorted order of terms to preserve it during melting
         sorted_term_order = merged_dec['Term'].tolist()
+        
+        # Get formatted display versions of terms
+        formatted_terms = [format_term(term) for term in sorted_term_order]
+        
+        # Create a modified term mapping for display (format all terms)
+        term_display_map = {term: formatted_terms[i] for i, term in enumerate(sorted_term_order)}
         
         # Pivot to long format for overlay comparison
         melted_dec = pd.melt(
@@ -285,6 +298,12 @@ for test in contrasts:
             value_name='Correlation'
         )
         
+        # Apply the display mapping
+        melted_dec['Term_Display'] = melted_dec['Term'].map(term_display_map)
+        
+        # Create sorted order for display (all formatted terms)
+        display_order = formatted_terms
+        
         # Clean legend labels
         melted_dec['ROI_Type'] = melted_dec['ROI_Type'].map({
             'Atlas_r': 'Atlas ROI',
@@ -292,26 +311,29 @@ for test in contrasts:
         })
         
         # Dynamically scale figure height
-        fig_height = max(6, len(merged_dec) * 0.22)
+        fig_height = max(6, len(formatted_terms) * 0.22)
         fig, ax = plt.subplots(figsize=(7, fig_height))
         
         # Draw connecting lines between Atlas and Drawn ROI points for each term
         for i, term in enumerate(sorted_term_order):
+            formatted_term = formatted_terms[i]
+            y_pos = i
+            
             term_data = melted_dec[melted_dec['Term'] == term]
             if len(term_data) == 2:
                 atlas_r = term_data[term_data['ROI_Type'] == 'Atlas ROI']['Correlation'].values[0]
                 drawn_r = term_data[term_data['ROI_Type'] == 'Drawn ROI']['Correlation'].values[0]
                 # Use red line if Drawn ROI has larger correlation than Atlas ROI, otherwise black
                 line_color = "#9A9B9A" if drawn_r > atlas_r else 'black'
-                ax.plot([atlas_r, drawn_r], [i, i], color=line_color, linewidth=2.5, zorder=1)
+                ax.plot([atlas_r, drawn_r], [y_pos, y_pos], color=line_color, linewidth=2.5, zorder=1)
         
         # Overlay both ROI types on same plot
         sns.stripplot(
             data=melted_dec,
             x='Correlation',
-            y='Term',
+            y='Term_Display',
             hue='ROI_Type',
-            order=sorted_term_order,  # Preserve atlas order
+            order=display_order,
             size=8,
             orient="h",
             jitter=False,
