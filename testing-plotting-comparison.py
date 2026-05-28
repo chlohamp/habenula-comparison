@@ -159,6 +159,75 @@ for test in contrasts:
         output_png = op.join(analysis_dir, f"plot_mean_z_overlaid_comparison_{test}.png")
         plt.savefig(output_png, bbox_inches="tight", dpi=300)
         plt.close()
+        
+        # ===== TOP 15 VERSION =====
+        # Filter to top 15 regions (already sorted by Mean_Z_Atlas descending)
+        df_top15 = df_sorted.head(15)
+        sorted_region_order_top15 = df_top15['Region_Label'].tolist()
+        
+        # Pivot to long format for overlay comparison
+        melted_z_top15 = pd.melt(
+            df_top15,
+            id_vars=['Region_Label'],
+            value_vars=['Mean_Z_Atlas', 'Mean_Z_Drawn'],
+            var_name='ROI_Type',
+            value_name='Mean_Z_Score'
+        )
+        
+        # Clean legend labels
+        melted_z_top15['ROI_Type'] = melted_z_top15['ROI_Type'].map({
+            'Mean_Z_Atlas': 'Atlas ROI',
+            'Mean_Z_Drawn': 'Drawn ROI'
+        })
+        
+        # Figure for top 15
+        fig_height = max(6, len(df_top15) * 0.3)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Draw connecting lines between Atlas and Drawn ROI points for each region
+        for i, region in enumerate(sorted_region_order_top15):
+            region_data = melted_z_top15[melted_z_top15['Region_Label'] == region]
+            if len(region_data) == 2:
+                atlas_z = region_data[region_data['ROI_Type'] == 'Atlas ROI']['Mean_Z_Score'].values[0]
+                drawn_z = region_data[region_data['ROI_Type'] == 'Drawn ROI']['Mean_Z_Score'].values[0]
+                line_color = "#9A9B9A" if drawn_z > atlas_z else 'black'
+                ax.plot([atlas_z, drawn_z], [i, i], color=line_color, linewidth=2.5, zorder=1)
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_z_top15,
+            x='Mean_Z_Score',
+            y='Region_Label',
+            hue='ROI_Type',
+            order=sorted_region_order_top15,
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Top 15 Regions: Mean Z-Score Comparison ({test.upper()})",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Mean Z-Score", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Remove the auto-generated legend from seaborn
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png_top15 = op.join(analysis_dir, f"plot_mean_z_overlaid_comparison_top15_{test}.png")
+        plt.savefig(output_png_top15, bbox_inches="tight", dpi=300)
+        plt.close()
 
 print("Overlaid Mean Z-Score comparison figures generated successfully!")
 
@@ -329,6 +398,90 @@ for test in contrasts:
         
         output_png = op.join(analysis_dir, f"plot_decoding_overlaid_atlas_order_{test}.png")
         plt.savefig(output_png, bbox_inches="tight", dpi=300)
+        plt.close()
+        
+        # ===== TOP 15 VERSION =====
+        # Filter to top 15 terms (already sorted by Atlas_r descending)
+        merged_dec_top15 = merged_dec.head(15)
+        sorted_term_order_top15 = merged_dec_top15['Term'].tolist()
+        
+        # Get formatted display versions of top 15 terms
+        formatted_terms_top15 = [format_term(term) for term in sorted_term_order_top15]
+        
+        # Create a modified term mapping for display
+        term_display_map_top15 = {term: formatted_terms_top15[i] for i, term in enumerate(sorted_term_order_top15)}
+        
+        # Pivot to long format for overlay comparison
+        melted_dec_top15 = pd.melt(
+            merged_dec_top15,
+            id_vars=['Term'],
+            value_vars=['Atlas_r', 'Drawn_r'],
+            var_name='ROI_Type',
+            value_name='Correlation'
+        )
+        
+        # Apply the display mapping
+        melted_dec_top15['Term_Display'] = melted_dec_top15['Term'].map(term_display_map_top15)
+        
+        # Create sorted order for display
+        display_order_top15 = formatted_terms_top15
+        
+        # Clean legend labels
+        melted_dec_top15['ROI_Type'] = melted_dec_top15['ROI_Type'].map({
+            'Atlas_r': 'Atlas ROI',
+            'Drawn_r': 'Drawn ROI'
+        })
+        
+        # Figure for top 15
+        fig_height = max(6, len(formatted_terms_top15) * 0.3)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Draw connecting lines between Atlas and Drawn ROI points for each term
+        for i, term in enumerate(sorted_term_order_top15):
+            formatted_term = formatted_terms_top15[i]
+            y_pos = i
+            
+            term_data = melted_dec_top15[melted_dec_top15['Term'] == term]
+            if len(term_data) == 2:
+                atlas_r = term_data[term_data['ROI_Type'] == 'Atlas ROI']['Correlation'].values[0]
+                drawn_r = term_data[term_data['ROI_Type'] == 'Drawn ROI']['Correlation'].values[0]
+                line_color = "#9A9B9A" if drawn_r > atlas_r else 'black'
+                ax.plot([atlas_r, drawn_r], [y_pos, y_pos], color=line_color, linewidth=2.5, zorder=1)
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_dec_top15,
+            x='Correlation',
+            y='Term_Display',
+            hue='ROI_Type',
+            order=display_order_top15,
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Top 15 Terms: Functional Decoding Correlation Comparison ({test.upper()})",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Correlation Coefficient (r)", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Remove the auto-generated legend from seaborn
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png_top15 = op.join(analysis_dir, f"plot_decoding_overlaid_atlas_order_top15_{test}.png")
+        plt.savefig(output_png_top15, bbox_inches="tight", dpi=300)
         plt.close()
 
 print("Overlaid decoding plots (sorted by Atlas) generated successfully!")
