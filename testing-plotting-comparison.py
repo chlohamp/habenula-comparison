@@ -24,33 +24,18 @@ hcpex_atlas = pd.read_csv("./dset/HCPex_2mm/HCPex_2mm.csv")
 for test in contrasts:
     print(f"Processing separate HCPex Regional plots for {test.upper()}...")
     
-    overlap_csv = op.join(analysis_dir, f"hcpex_region_breakdown_{test}.csv")
-    distance_csv = op.join(analysis_dir, f"hcpex_distance_metrics_{test}.csv")
     conn_csv = op.join(analysis_dir, f"hcpex_connectivity_comparison_{test}.csv")
     
-    if op.exists(overlap_csv) and op.exists(distance_csv) and op.exists(conn_csv):
-        df_overlap = pd.read_csv(overlap_csv)
-        df_dist = pd.read_csv(distance_csv)
-        df_conn = pd.read_csv(conn_csv).rename(columns={
-            'Spearman_rho': 'Conn_Spearman_rho', 
-            'Pearson_r': 'Conn_Pearson_r'
-        })
-        
-        # Merge matrices and drop background regions with no data
-        df = pd.merge(df_overlap, df_dist, on="HCPex_Region_ID")
-        df = pd.merge(df, df_conn, on="HCPex_Region_ID").dropna(
-            subset=['Dice_Coefficient', 'CoM_Distance_mm', 'Conn_Spearman_rho']
-        )
+    if op.exists(conn_csv):
+        df = pd.read_csv(conn_csv)
         
         # Merge with HCPex atlas to get proper full names
         df = pd.merge(df, hcpex_atlas[['Index', 'Proper Full Name']], left_on='HCPex_Region_ID', right_on='Index', how='left')
         
         # Calculate Consensus Ranks
         df['Rank_Dice'] = df['Dice_Coefficient'].rank(ascending=False)
-        df['Rank_Spearman'] = df['Conn_Spearman_rho'].rank(ascending=False)
+        df['Rank_Spearman'] = df['Spearman_rho'].rank(ascending=False)
         df['Rank_Dist'] = df['CoM_Distance_mm'].rank(ascending=True)
-        df['Rank_Z'] = df['Absolute_Z_Difference'].rank(ascending=True)
-        df['Mean_Z'] = df['Mean_Z_Drawn'].rank(ascending=True)
         
         df['Region_Label'] = df['Proper Full Name']
         
@@ -60,11 +45,9 @@ for test in contrasts:
         regional_metrics = {
             'Dice_Coefficient': ("Dice Overlap Coefficient", "Higher is Better", "steelblue", False),
             'CoM_Distance_mm': ("Center of Mass Distance (mm)", "Lower is Better", "steelblue", True),
-            'Hausdorff_Distance_mm': ("Hausdorff Distance (mm)", "Lower is Better", "steelblue", True),
             'Mean_Z_Drawn': ("Mean Z-Score (Drawn ROI)", "Higher is Better", "darkgreen", False),
             'Mean_Z_Atlas': ("Mean Z-Score (Atlas ROI)", "Higher is Better", "darkblue", False),
-            'Absolute_Z_Difference': ("Absolute Delta Z-Score", "Lower is Better", "steelblue", True),
-            'Conn_Spearman_rho': ("Unthresholded Spearman rho", "Higher is Better", "steelblue", False)
+            'Spearman_rho': ("Unthresholded Spearman rho", "Higher is Better", "steelblue", False)
         }
         
         for metric, (title, subtitle, color_name, asc_order) in regional_metrics.items():
@@ -97,23 +80,10 @@ for test in contrasts:
 for test in contrasts:
     print(f"Processing overlaid Mean Z-Score plot for {test.upper()}...")
     
-    overlap_csv = op.join(analysis_dir, f"hcpex_region_breakdown_{test}.csv")
-    distance_csv = op.join(analysis_dir, f"hcpex_distance_metrics_{test}.csv")
     conn_csv = op.join(analysis_dir, f"hcpex_connectivity_comparison_{test}.csv")
     
-    if op.exists(overlap_csv) and op.exists(distance_csv) and op.exists(conn_csv):
-        df_overlap = pd.read_csv(overlap_csv)
-        df_dist = pd.read_csv(distance_csv)
-        df_conn = pd.read_csv(conn_csv).rename(columns={
-            'Spearman_rho': 'Conn_Spearman_rho', 
-            'Pearson_r': 'Conn_Pearson_r'
-        })
-        
-        # Merge matrices and drop background regions with no data
-        df = pd.merge(df_overlap, df_dist, on="HCPex_Region_ID")
-        df = pd.merge(df, df_conn, on="HCPex_Region_ID").dropna(
-            subset=['Dice_Coefficient', 'CoM_Distance_mm', 'Conn_Spearman_rho']
-        )
+    if op.exists(conn_csv):
+        df = pd.read_csv(conn_csv)
         
         # Merge with HCPex atlas to get proper full names
         df = pd.merge(df, hcpex_atlas[['Index', 'Proper Full Name']], left_on='HCPex_Region_ID', right_on='Index', how='left')
@@ -198,8 +168,8 @@ print("Overlaid Mean Z-Score comparison figures generated successfully!")
 for test in contrasts:
     print(f"Processing separate Decoding plots for {test.upper()}...")
     
-    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_terms.csv")
-    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_terms.csv")
+    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_filtered_terms.csv")
+    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_filtered_terms.csv")
     
     if op.exists(drawn_path) and op.exists(atlas_path):
         df_drawn = pd.read_csv(drawn_path)
@@ -218,8 +188,7 @@ for test in contrasts:
         # For discrepancy: Lower difference is better -> Sort Ascending (True)
         decoding_metrics = {
             'Drawn_r': ("Drawn ROI Correlation (r)", "Functional Decoding Vector Strength", "teal", False),
-            'Atlas_r': ("Atlas ROI Correlation (r)", "Functional Decoding Vector Strength", "teal", False),
-            'Absolute_Discrepancy': ("Absolute Discrepancy (|Delta r|)", "Lower is Better", "crimson", True)
+            'Atlas_r': ("Atlas ROI Correlation (r)", "Functional Decoding Vector Strength", "teal", False)
         }
         
         for metric, (title, subtitle, color_name, asc_order) in decoding_metrics.items():
@@ -254,8 +223,8 @@ print("\nAll customized standalone metric figures generated and saved successful
 for test in contrasts:
     print(f"Processing overlaid Decoding plot (sorted by Atlas) for {test.upper()}...")
     
-    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_terms.csv")
-    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_terms.csv")
+    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_filtered_terms.csv")
+    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_filtered_terms.csv")
     
     if op.exists(drawn_path) and op.exists(atlas_path):
         df_drawn = pd.read_csv(drawn_path)
@@ -370,8 +339,8 @@ print("Overlaid decoding plots (sorted by Atlas) generated successfully!")
 for test in contrasts:
     print(f"Processing overlaid Decoding plot for {test.upper()}...")
     
-    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_terms.csv")
-    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_terms.csv")
+    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_filtered_terms.csv")
+    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_filtered_terms.csv")
     
     if op.exists(drawn_path) and op.exists(atlas_path):
         df_drawn = pd.read_csv(drawn_path)
