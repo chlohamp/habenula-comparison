@@ -41,7 +41,7 @@ for test_key, paths in contrasts_to_compare.items():
     # Verification check to make sure plot script is ran first
     if not op.exists(paths["drawn"]) or not op.exists(paths["atlas"]):
         print(f"Skipping {test_key}: Decoding files not found in {decoding_results_dir}.")
-        print(f"Make sure to execute your modified plot-connectivity code first to generate them.")
+        print(f"Make sure to execute the plot-connectivity code first to generate them.")
         continue
         
     # Load dataframes

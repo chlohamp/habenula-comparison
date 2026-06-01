@@ -35,7 +35,7 @@ maps_to_process = {
 # ---------------------------------------------------------
 # 2. Cluster Extraction Parameters (Adjust as needed)
 # ---------------------------------------------------------
-# Adjust cluster_stat_thresh to match the statistical values in your maps (e.g., Z-score or t-value)
+# Adjust cluster_stat_thresh to match the statistical values in the maps (e.g., Z-score or t-value)
 cluster_stat_thresh = 3.1  # Standard threshold corresponding to p < 0.001 uncorrected
 min_cluster_voxels = 10    # Minimum cluster extent threshold in voxels
 
