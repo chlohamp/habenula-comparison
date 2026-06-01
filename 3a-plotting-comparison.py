@@ -1,0 +1,570 @@
+import os
+import os.path as op
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------------
+# 1. Setup Paths
+# ---------------------------------------------------------
+data_dir = "./dset"
+analysis_dir = op.join(data_dir, "derivatives", "hb-conn")
+decoding_results_dir = op.join(analysis_dir, "decoding_results")
+
+contrasts = ["1s", "2s"]
+sns.set_theme(style="whitegrid")
+
+# Load the HCPex atlas mapping to get proper full names
+hcpex_atlas = pd.read_csv("./dset/HCPex_2mm/HCPex_2mm.csv")
+
+# =========================================================
+# PART A: HCPex Regional Connectivity Alignment Metrics
+# =========================================================
+for test in contrasts:
+    print(f"Processing separate HCPex Regional plots for {test.upper()}...")
+    
+    conn_csv = op.join(analysis_dir, f"hcpex_connectivity_comparison_{test}.csv")
+    
+    if op.exists(conn_csv):
+        df = pd.read_csv(conn_csv)
+        
+        # Merge with HCPex atlas to get proper full names
+        df = pd.merge(df, hcpex_atlas[['Index', 'Proper Full Name']], left_on='HCPex_Region_ID', right_on='Index', how='left')
+        
+        # Calculate Consensus Ranks
+        df['Rank_Dice'] = df['Dice_Coefficient'].rank(ascending=False)
+        df['Rank_Spearman'] = df['Spearman_rho'].rank(ascending=False)
+        df['Rank_Dist'] = df['CoM_Distance_mm'].rank(ascending=True)
+        
+        df['Region_Label'] = df['Proper Full Name']
+        
+        # Define metric parameters: (Title, Subtitle, Color, Ascending_Sort_Order)
+        # For Dice and Spearman: Higher is Better -> Sort Descending (ascending=False)
+        # For Distance, Z-diff, and Ranks: Lower is Better -> Sort Ascending (ascending=True)
+        regional_metrics = {
+            'Dice_Coefficient': ("Dice Overlap Coefficient", "Higher is Better", "steelblue", False),
+            'CoM_Distance_mm': ("Center of Mass Distance (mm)", "Lower is Better", "steelblue", True),
+            'Mean_Z_Drawn': ("Mean Z-Score (Drawn ROI)", "Higher is Better", "darkgreen", False),
+            'Mean_Z_Atlas': ("Mean Z-Score (Atlas ROI)", "Higher is Better", "darkblue", False),
+            'Spearman_rho': ("Unthresholded Spearman rho", "Higher is Better", "steelblue", False)
+        }
+        
+        for metric, (title, subtitle, color_name, asc_order) in regional_metrics.items():
+            # Dynamically sort the dataframe for THIS specific metric loop
+            plot_df = df.sort_values(by=metric, ascending=asc_order)
+            
+            # Dynamically scale figure height based on the number of regions found
+            fig_height = max(6, len(plot_df) * 0.22)
+            fig, ax = plt.subplots(figsize=(6, fig_height))
+            
+            sns.stripplot(
+                data=plot_df, x=metric, y="Region_Label", size=8, orient="h", 
+                jitter=False, color=color_name, linewidth=1, edgecolor="w", ax=ax
+            )
+            
+            ax.set_title(f"{title}\n({subtitle})", fontsize=11, fontweight='bold', pad=12)
+            ax.xaxis.grid(False)
+            ax.yaxis.grid(True, color='lightgray', linestyle='-')
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            sns.despine(left=True, bottom=True, ax=ax)
+            
+            output_png = op.join(analysis_dir, f"plot_regional_{metric}_{test}.png")
+            plt.savefig(output_png, bbox_inches="tight", dpi=300)
+            plt.close()
+
+# =========================================================
+# PART A.5: Combined Mean Z-Score Plots (Atlas ROI Order)
+# =========================================================
+for test in contrasts:
+    print(f"Processing overlaid Mean Z-Score plot for {test.upper()}...")
+    
+    conn_csv = op.join(analysis_dir, f"hcpex_connectivity_comparison_{test}.csv")
+    
+    if op.exists(conn_csv):
+        df = pd.read_csv(conn_csv)
+        
+        # Merge with HCPex atlas to get proper full names
+        df = pd.merge(df, hcpex_atlas[['Index', 'Proper Full Name']], left_on='HCPex_Region_ID', right_on='Index', how='left')
+        
+        df['Region_Label'] = df['Proper Full Name']
+        
+        # Sort by Atlas Mean Z-Score (descending: higher is better at top)
+        df_sorted = df.sort_values(by='Mean_Z_Atlas', ascending=False)
+        
+        # Capture the sorted order of regions to preserve it during melting
+        sorted_region_order = df_sorted['Region_Label'].tolist()
+        
+        # Pivot to long format for overlay comparison
+        melted_z = pd.melt(
+            df_sorted,
+            id_vars=['Region_Label'],
+            value_vars=['Mean_Z_Atlas', 'Mean_Z_Drawn'],
+            var_name='ROI_Type',
+            value_name='Mean_Z_Score'
+        )
+        
+        # Clean legend labels
+        melted_z['ROI_Type'] = melted_z['ROI_Type'].map({
+            'Mean_Z_Atlas': 'Atlas ROI',
+            'Mean_Z_Drawn': 'Drawn ROI'
+        })
+        
+        # Dynamically scale figure height
+        fig_height = max(6, len(df_sorted) * 0.22)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Draw connecting lines between Atlas and Drawn ROI points for each region
+        for i, region in enumerate(sorted_region_order):
+            region_data = melted_z[melted_z['Region_Label'] == region]
+            if len(region_data) == 2:
+                atlas_z = region_data[region_data['ROI_Type'] == 'Atlas ROI']['Mean_Z_Score'].values[0]
+                drawn_z = region_data[region_data['ROI_Type'] == 'Drawn ROI']['Mean_Z_Score'].values[0]
+                # Use red line if Drawn ROI has larger mean Z than Atlas ROI, otherwise black
+                line_color = "#9A9B9A" if drawn_z > atlas_z else 'black'
+                ax.plot([atlas_z, drawn_z], [i, i], color=line_color, linewidth=2.5, zorder=1)
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_z,
+            x='Mean_Z_Score',
+            y='Region_Label',
+            hue='ROI_Type',
+            order=sorted_region_order,  # Preserve atlas ROI order
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Mean Z-Score Comparison by Region ({test.upper()})\nSorted by Atlas ROI Mean Z-Score",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Mean Z-Score", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Style and place the legend
+        ax.legend(title="ROI Definition Method", loc="lower right", frameon=True, facecolor="w")
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png = op.join(analysis_dir, f"plot_mean_z_overlaid_comparison_{test}.png")
+        plt.savefig(output_png, bbox_inches="tight", dpi=300)
+        plt.close()
+        
+        # ===== TOP 15 VERSION =====
+        # Filter to top 15 regions (already sorted by Mean_Z_Atlas descending)
+        df_top15 = df_sorted.head(15)
+        sorted_region_order_top15 = df_top15['Region_Label'].tolist()
+        
+        # Pivot to long format for overlay comparison
+        melted_z_top15 = pd.melt(
+            df_top15,
+            id_vars=['Region_Label'],
+            value_vars=['Mean_Z_Atlas', 'Mean_Z_Drawn'],
+            var_name='ROI_Type',
+            value_name='Mean_Z_Score'
+        )
+        
+        # Clean legend labels
+        melted_z_top15['ROI_Type'] = melted_z_top15['ROI_Type'].map({
+            'Mean_Z_Atlas': 'Atlas ROI',
+            'Mean_Z_Drawn': 'Drawn ROI'
+        })
+        
+        # Figure for top 15
+        fig_height = max(6, len(df_top15) * 0.3)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Draw connecting lines between Atlas and Drawn ROI points for each region
+        for i, region in enumerate(sorted_region_order_top15):
+            region_data = melted_z_top15[melted_z_top15['Region_Label'] == region]
+            if len(region_data) == 2:
+                atlas_z = region_data[region_data['ROI_Type'] == 'Atlas ROI']['Mean_Z_Score'].values[0]
+                drawn_z = region_data[region_data['ROI_Type'] == 'Drawn ROI']['Mean_Z_Score'].values[0]
+                line_color = "#9A9B9A" if drawn_z > atlas_z else 'black'
+                ax.plot([atlas_z, drawn_z], [i, i], color=line_color, linewidth=2.5, zorder=1)
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_z_top15,
+            x='Mean_Z_Score',
+            y='Region_Label',
+            hue='ROI_Type',
+            order=sorted_region_order_top15,
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Top 15 Regions: Mean Z-Score Comparison ({test.upper()})",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Mean Z-Score", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Remove the auto-generated legend from seaborn
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png_top15 = op.join(analysis_dir, f"plot_mean_z_overlaid_comparison_top15_{test}.png")
+        plt.savefig(output_png_top15, bbox_inches="tight", dpi=300)
+        plt.close()
+
+print("Overlaid Mean Z-Score comparison figures generated successfully!")
+
+# =========================================================
+# PART B: NeuroQuery Functional Decoding Alignment Metrics
+# =========================================================
+for test in contrasts:
+    print(f"Processing separate Decoding plots for {test.upper()}...")
+    
+    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_filtered_terms.csv")
+    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_filtered_terms.csv")
+    
+    if op.exists(drawn_path) and op.exists(atlas_path):
+        df_drawn = pd.read_csv(drawn_path)
+        df_atlas = pd.read_csv(atlas_path)
+        
+        d_col = 'r' if 'r' in df_drawn.columns else 'Correlation'
+        a_col = 'r' if 'r' in df_atlas.columns else 'Correlation'
+        
+        df_drawn = df_drawn[['Term', d_col]].rename(columns={d_col: 'Drawn_r'})
+        df_atlas = df_atlas[['Term', a_col]].rename(columns={a_col: 'Atlas_r'})
+        
+        merged_dec = pd.merge(df_drawn, df_atlas, on="Term")
+        merged_dec['Absolute_Discrepancy'] = (merged_dec['Drawn_r'] - merged_dec['Atlas_r']).abs()
+        
+        # For raw correlations: Highest values mean strongest association -> Sort Descending (False)
+        # For discrepancy: Lower difference is better -> Sort Ascending (True)
+        decoding_metrics = {
+            'Drawn_r': ("Drawn ROI Correlation (r)", "Functional Decoding Vector Strength", "teal", False),
+            'Atlas_r': ("Atlas ROI Correlation (r)", "Functional Decoding Vector Strength", "teal", False)
+        }
+        
+        for metric, (title, subtitle, color_name, asc_order) in decoding_metrics.items():
+            # Dynamically sort the dataframe for THIS specific decoding loop
+            plot_dec = merged_dec.sort_values(by=metric, ascending=asc_order)
+            
+            # Dynamically scale figure height based on the total number of terms decoded
+            fig_height = max(6, len(plot_dec) * 0.22)
+            fig, ax = plt.subplots(figsize=(6, fig_height))
+            
+            sns.stripplot(
+                data=plot_dec, x=metric, y="Term", size=8, orient="h", 
+                jitter=False, color=color_name, linewidth=1, edgecolor="w", ax=ax
+            )
+            
+            ax.set_title(f"{title}\n({subtitle})", fontsize=11, fontweight='bold', pad=12)
+            ax.xaxis.grid(False)
+            ax.yaxis.grid(True, color='lightgray', linestyle='-')
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            sns.despine(left=True, bottom=True, ax=ax)
+            
+            output_png = op.join(analysis_dir, f"plot_decoding_{metric}_{test}.png")
+            plt.savefig(output_png, bbox_inches="tight", dpi=300)
+            plt.close()
+
+print("\nAll customized standalone metric figures generated and saved successfully!")
+
+# =========================================================
+# PART B.5: Combined Decoding Plots (Atlas Strength Order)
+# =========================================================
+for test in contrasts:
+    print(f"Processing overlaid Decoding plot (sorted by Atlas) for {test.upper()}...")
+    
+    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_filtered_terms.csv")
+    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_filtered_terms.csv")
+    
+    if op.exists(drawn_path) and op.exists(atlas_path):
+        df_drawn = pd.read_csv(drawn_path)
+        df_atlas = pd.read_csv(atlas_path)
+        
+        d_col = 'r' if 'r' in df_drawn.columns else 'Correlation'
+        a_col = 'r' if 'r' in df_atlas.columns else 'Correlation'
+        
+        df_drawn = df_drawn[['Term', d_col]].rename(columns={d_col: 'Drawn_r'})
+        df_atlas = df_atlas[['Term', a_col]].rename(columns={a_col: 'Atlas_r'})
+        
+        # Merge data
+        merged_dec = pd.merge(df_drawn, df_atlas, on="Term")
+        
+        # Sort by Atlas_r (descending: strongest at top)
+        merged_dec = merged_dec.sort_values(by='Atlas_r', ascending=False)
+        
+        # Function to extract and format the last 3 words from term
+        def format_term(term):
+            """Extract the last 3 words separated by _ and join with commas"""
+            parts = term.split('_')
+            # Take the last 3 parts and join with commas and spaces
+            return ", ".join(parts[-3:])
+        
+        # Capture the sorted order of terms to preserve it during melting
+        sorted_term_order = merged_dec['Term'].tolist()
+        
+        # Get formatted display versions of terms
+        formatted_terms = [format_term(term) for term in sorted_term_order]
+        
+        # Create a modified term mapping for display (format all terms)
+        term_display_map = {term: formatted_terms[i] for i, term in enumerate(sorted_term_order)}
+        
+        # Pivot to long format for overlay comparison
+        melted_dec = pd.melt(
+            merged_dec,
+            id_vars=['Term'],
+            value_vars=['Atlas_r', 'Drawn_r'],
+            var_name='ROI_Type',
+            value_name='Correlation'
+        )
+        
+        # Apply the display mapping
+        melted_dec['Term_Display'] = melted_dec['Term'].map(term_display_map)
+        
+        # Create sorted order for display (all formatted terms)
+        display_order = formatted_terms
+        
+        # Clean legend labels
+        melted_dec['ROI_Type'] = melted_dec['ROI_Type'].map({
+            'Atlas_r': 'Atlas ROI',
+            'Drawn_r': 'Drawn ROI'
+        })
+        
+        # Dynamically scale figure height
+        fig_height = max(6, len(formatted_terms) * 0.22)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Draw connecting lines between Atlas and Drawn ROI points for each term
+        for i, term in enumerate(sorted_term_order):
+            formatted_term = formatted_terms[i]
+            y_pos = i
+            
+            term_data = melted_dec[melted_dec['Term'] == term]
+            if len(term_data) == 2:
+                atlas_r = term_data[term_data['ROI_Type'] == 'Atlas ROI']['Correlation'].values[0]
+                drawn_r = term_data[term_data['ROI_Type'] == 'Drawn ROI']['Correlation'].values[0]
+                # Use red line if Drawn ROI has larger correlation than Atlas ROI, otherwise black
+                line_color = "#9A9B9A" if drawn_r > atlas_r else 'black'
+                ax.plot([atlas_r, drawn_r], [y_pos, y_pos], color=line_color, linewidth=2.5, zorder=1)
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_dec,
+            x='Correlation',
+            y='Term_Display',
+            hue='ROI_Type',
+            order=display_order,
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Functional Decoding Correlation Comparison ({test.upper()})\nSorted by Atlas ROI Correlation Strength",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Correlation Coefficient (r)", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Style and place the legend
+        ax.legend(title="ROI Definition Method", loc="lower right", frameon=True, facecolor="w")
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png = op.join(analysis_dir, f"plot_decoding_overlaid_atlas_order_{test}.png")
+        plt.savefig(output_png, bbox_inches="tight", dpi=300)
+        plt.close()
+        
+        # ===== TOP 15 VERSION =====
+        # Filter to top 15 terms (already sorted by Atlas_r descending)
+        merged_dec_top15 = merged_dec.head(15)
+        sorted_term_order_top15 = merged_dec_top15['Term'].tolist()
+        
+        # Get formatted display versions of top 15 terms
+        formatted_terms_top15 = [format_term(term) for term in sorted_term_order_top15]
+        
+        # Create a modified term mapping for display
+        term_display_map_top15 = {term: formatted_terms_top15[i] for i, term in enumerate(sorted_term_order_top15)}
+        
+        # Pivot to long format for overlay comparison
+        melted_dec_top15 = pd.melt(
+            merged_dec_top15,
+            id_vars=['Term'],
+            value_vars=['Atlas_r', 'Drawn_r'],
+            var_name='ROI_Type',
+            value_name='Correlation'
+        )
+        
+        # Apply the display mapping
+        melted_dec_top15['Term_Display'] = melted_dec_top15['Term'].map(term_display_map_top15)
+        
+        # Create sorted order for display
+        display_order_top15 = formatted_terms_top15
+        
+        # Clean legend labels
+        melted_dec_top15['ROI_Type'] = melted_dec_top15['ROI_Type'].map({
+            'Atlas_r': 'Atlas ROI',
+            'Drawn_r': 'Drawn ROI'
+        })
+        
+        # Figure for top 15
+        fig_height = max(6, len(formatted_terms_top15) * 0.3)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Draw connecting lines between Atlas and Drawn ROI points for each term
+        for i, term in enumerate(sorted_term_order_top15):
+            formatted_term = formatted_terms_top15[i]
+            y_pos = i
+            
+            term_data = melted_dec_top15[melted_dec_top15['Term'] == term]
+            if len(term_data) == 2:
+                atlas_r = term_data[term_data['ROI_Type'] == 'Atlas ROI']['Correlation'].values[0]
+                drawn_r = term_data[term_data['ROI_Type'] == 'Drawn ROI']['Correlation'].values[0]
+                line_color = "#9A9B9A" if drawn_r > atlas_r else 'black'
+                ax.plot([atlas_r, drawn_r], [y_pos, y_pos], color=line_color, linewidth=2.5, zorder=1)
+        
+        # Overlay both ROI types on same plot
+        sns.stripplot(
+            data=melted_dec_top15,
+            x='Correlation',
+            y='Term_Display',
+            hue='ROI_Type',
+            order=display_order_top15,
+            size=8,
+            orient="h",
+            jitter=False,
+            palette={'Atlas ROI': '#E93524', 'Drawn ROI': '#789A2D'},
+            linewidth=0.8,
+            edgecolor="w",
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Top 15 Terms: Functional Decoding Correlation Comparison ({test.upper()})",
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Correlation Coefficient (r)", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Remove the auto-generated legend from seaborn
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png_top15 = op.join(analysis_dir, f"plot_decoding_overlaid_atlas_order_top15_{test}.png")
+        plt.savefig(output_png_top15, bbox_inches="tight", dpi=300)
+        plt.close()
+
+print("Overlaid decoding plots (sorted by Atlas) generated successfully!")
+
+# =========================================================
+# PART B: NeuroQuery Functional Decoding Alignment Metrics
+# =========================================================
+for test in contrasts:
+    print(f"Processing overlaid Decoding plot for {test.upper()}...")
+    
+    drawn_path = op.join(decoding_results_dir, f"{test}_drawn_neuroquery_filtered_terms.csv")
+    atlas_path = op.join(decoding_results_dir, f"{test}_atlas_neuroquery_filtered_terms.csv")
+    
+    if op.exists(drawn_path) and op.exists(atlas_path):
+        df_drawn = pd.read_csv(drawn_path)
+        df_atlas = pd.read_csv(atlas_path)
+        
+        d_col = 'r' if 'r' in df_drawn.columns else 'Correlation'
+        a_col = 'r' if 'r' in df_atlas.columns else 'Correlation'
+        
+        df_drawn = df_drawn[['Term', d_col]].rename(columns={d_col: 'Drawn_r'})
+        df_atlas = df_atlas[['Term', a_col]].rename(columns={a_col: 'Atlas_r'})
+        
+        # Merge data and calculate absolute discrepancy
+        merged_dec = pd.merge(df_drawn, df_atlas, on="Term")
+        merged_dec['Absolute_Discrepancy'] = (merged_dec['Drawn_r'] - merged_dec['Atlas_r']).abs()
+        
+        # SORTING: Lowest absolute discrepancy (most similar) goes to the top
+        merged_dec = merged_dec.sort_values(by='Absolute_Discrepancy', ascending=True)
+        
+        # Capture the sorted order of terms to preserve it during melting
+        sorted_term_order = merged_dec['Term'].tolist()
+        
+        # Pivot the dataframe to long format so Seaborn can group by "Method"
+        melted_dec = pd.melt(
+            merged_dec, 
+            id_vars=['Term', 'Absolute_Discrepancy'], 
+            value_vars=['Drawn_r', 'Atlas_r'],
+            var_name='Method', 
+            value_name='Correlation'
+        )
+        
+        # Give the legend tracks clean publication-ready labels
+        melted_dec['Method'] = melted_dec['Method'].map({'Drawn_r': 'Drawn ROI', 'Atlas_r': 'Atlas ROI'})
+        
+        # Dynamically scale figure height based on total terms
+        fig_height = max(6, len(merged_dec) * 0.22)
+        fig, ax = plt.subplots(figsize=(7, fig_height))
+        
+        # Plot both sets of points on the same axis using 'hue'
+        # Adjust palette colors here if you prefer different aesthetics
+        sns.stripplot(
+            data=melted_dec, 
+            x='Correlation', 
+            y='Term', 
+            hue='Method',
+            order=sorted_term_order,  # Enforces the "most similar at top" layout
+            size=8, 
+            orient="h", 
+            jitter=False, 
+            palette={'Drawn ROI': '#008080', 'Atlas ROI': '#FF8C00'}, # Teal vs Dark Orange
+            linewidth=0.8, 
+            edgecolor="w", 
+            alpha=0.85,
+            ax=ax
+        )
+        
+        # Title and Formatting
+        ax.set_title(f"Meta-Analytic Functional Decoding Convergence ({test.upper()})\nSorted by Absolute Discrepancy (Most Similar at Top)", 
+                     fontsize=11, fontweight='bold', pad=14)
+        
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color='lightgray', linestyle='-')
+        ax.set_xlabel("Correlation Coefficient (r)", fontsize=10, labelpad=8)
+        ax.set_ylabel("")
+        
+        # Style and place the legend neatly out of the way
+        ax.legend(title="ROI Definition Method", loc="lower right", frameon=True, facecolor="w")
+        
+        sns.despine(left=True, bottom=True, ax=ax)
+        
+        output_png = op.join(analysis_dir, f"plot_decoding_overlaid_comparison_{test}.png")
+        plt.savefig(output_png, bbox_inches="tight", dpi=300)
+        plt.close()
+
+print("\nOverlaid decoding comparison figures generated successfully!")
