@@ -71,16 +71,22 @@ for test_name, paths in maps_to_process.items():
     atlas_data = atlas_unthresh_img.get_fdata()
     
     # ===== SPATIAL SIMILARITY (THRESHOLDED) =====
+    # Suprathreshold voxel counts
+    drawn_voxel_count = int(np.sum(drawn_thresholded))
+    atlas_voxel_count = int(np.sum(atlas_thresholded))
+
     # Dice Similarity Coefficient
     intersection = np.sum(drawn_thresholded & atlas_thresholded)
-    union_count = np.sum(drawn_thresholded) + np.sum(atlas_thresholded)
-    
+    union_count = drawn_voxel_count + atlas_voxel_count
+
     if union_count > 0:
         dice = (2.0 * intersection) / union_count
     else:
         dice = 0.0
-    
+
     print(f"\nSpatial Similarity (Thresholded):")
+    print(f"  Suprathreshold Voxels (Subject-Specific): {drawn_voxel_count:,}")
+    print(f"  Suprathreshold Voxels (Atlas-Based):      {atlas_voxel_count:,}")
     print(f"  Dice Similarity Coefficient: {dice:.4f}")
     
     # ===== CONNECTIVITY EFFECT SIZES (UNTHRESHOLDED) =====
@@ -139,6 +145,8 @@ for test_name, paths in maps_to_process.items():
     # Store results
     results.append({
         "Test": test_name,
+        "Drawn_Suprathreshold_Voxels": drawn_voxel_count,
+        "Atlas_Suprathreshold_Voxels": atlas_voxel_count,
         "Dice_Coefficient": dice,
         "Spearman_rho": spearman_rho,
         "P_value": p_val
