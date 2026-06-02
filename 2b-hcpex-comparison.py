@@ -21,17 +21,19 @@ group_atlas_dir = op.join(analysis_dir, "group-atlas/habenula")
 atlas_hcpex_filename = op.join(data_dir, "HCPex_2mm", "HCPex_2mm.nii")
 hcpex_labels_filename = op.join(data_dir, "HCPex_2mm", "HCPex_2mm.csv")
 
-# Note: We use the UNTHRESHOLDED maps here to accurately capture the 
-# full variance of connectivity values (Z-scores) within each region.
 maps_to_process = {
     "1s": {
-        "drawn": op.join(group_drawn_dir, "averaged", "sub-group_task-rest_desc-1SampletTest.nii.gz"),
-        "atlas": op.join(group_atlas_dir, "averaged", "sub-group_task-rest_desc-1SampletTest.nii.gz"),
+        "drawn_unthresholded": op.join(group_drawn_dir, "averaged", "sub-group_task-rest_desc-1SampletTest.nii.gz"),
+        "atlas_unthresholded": op.join(group_atlas_dir, "averaged", "sub-group_task-rest_desc-1SampletTest.nii.gz"),
+        "drawn_thresholded": op.join(group_drawn_dir, "averaged", "sub-group_task-rest_desc-1SampletTest_thresh.nii.gz"),
+        "atlas_thresholded": op.join(group_atlas_dir, "averaged", "sub-group_task-rest_desc-1SampletTest_thresh.nii.gz"),
         "output": op.join(analysis_dir, "hcpex_connectivity_comparison_1s.csv")
     },
     "2s": {
-        "drawn": op.join(group_drawn_dir, "difference", "sub-group_task-rest_desc-2SampletTest.nii.gz"),
-        "atlas": op.join(group_atlas_dir, "difference", "sub-group_task-rest_desc-2SampletTest.nii.gz"),
+        "drawn_unthresholded": op.join(group_drawn_dir, "difference", "sub-group_task-rest_desc-2SampletTest.nii.gz"),
+        "atlas_unthresholded": op.join(group_atlas_dir, "difference", "sub-group_task-rest_desc-2SampletTest.nii.gz"),
+        "drawn_thresholded": op.join(group_drawn_dir, "difference", "sub-group_task-rest_desc-2SampletTest_thresh.nii.gz"),
+        "atlas_thresholded": op.join(group_atlas_dir, "difference", "sub-group_task-rest_desc-2SampletTest_thresh.nii.gz"),
         "output": op.join(analysis_dir, "hcpex_connectivity_comparison_2s.csv")
     }
 }
@@ -53,21 +55,27 @@ for test_name, paths in maps_to_process.items():
     print(f"Comparing Connectivity for {test_name.upper()} Maps...")
     print(f"=========================================")
     
-    if not op.exists(paths["drawn"]) or not op.exists(paths["atlas"]):
-        print(f"Skipping {test_name}: Unthresholded files not found.")
+    required = [paths["drawn_unthresholded"], paths["atlas_unthresholded"],
+                paths["drawn_thresholded"], paths["atlas_thresholded"]]
+    if not all(op.exists(f) for f in required):
+        print(f"Skipping {test_name}: One or more files not found.")
         continue
-        
-    drawn_img = image.load_img(paths["drawn"])
-    atlas_img = image.load_img(paths["atlas"])
 
-    # Resample atlas to target statistical grid via nearest-neighbor
+    drawn_img = image.load_img(paths["drawn_unthresholded"])
+    atlas_img = image.load_img(paths["atlas_unthresholded"])
+    drawn_thresh_img = image.load_img(paths["drawn_thresholded"])
+    atlas_thresh_img = image.load_img(paths["atlas_thresholded"])
+
+    # Resample HCPex atlas to statistical map grid via nearest-neighbor
     hcpex_resampled = image.resample_to_img(hcpex_img, drawn_img, interpolation='nearest')
-    
-    # Extract raw Z-score data
+
+    # Extract Z-score data (unthresholded) and binary masks (thresholded)
     drawn_data = drawn_img.get_fdata()
     atlas_data = atlas_img.get_fdata()
+    drawn_thresh_data = (drawn_thresh_img.get_fdata() != 0).astype(int)
+    atlas_thresh_data = (atlas_thresh_img.get_fdata() != 0).astype(int)
     hcpex_data = np.rint(hcpex_resampled.get_fdata()).astype(int)
-    
+
     # Get affine for voxel to mm conversion
     affine = drawn_img.affine
 
@@ -76,9 +84,6 @@ for test_name, paths in maps_to_process.items():
     regions = regions[regions > 0]
 
     conn_results = []
-    
-    # Define threshold for thresholded activation maps (p < 0.001 ≈ Z > 3.1)
-    z_threshold = 3.1
 
     for region_id in regions:
         region_mask = (hcpex_data == region_id)
@@ -90,27 +95,28 @@ for test_name, paths in maps_to_process.items():
         # Isolate the Z-scores within this specific HCPex region
         z_drawn = drawn_data[region_mask]
         z_atlas = atlas_data[region_mask]
-        
+
+        # Isolate thresholded binary masks within this region
+        drawn_thresholded = drawn_thresh_data[region_mask]
+        atlas_thresholded = atlas_thresh_data[region_mask]
+
         # Get 3D coordinates of voxels in the region
         region_coords = np.where(region_mask)
-        
+
         # ===== SPATIAL SIMILARITY (THRESHOLDED) =====
+        # Suprathreshold voxel counts
+        drawn_active_voxels = int(np.sum(drawn_thresholded))
+        atlas_active_voxels = int(np.sum(atlas_thresholded))
+
         # Dice Similarity Coefficient
-        drawn_thresholded = (np.abs(z_drawn) > z_threshold).astype(int)
-        atlas_thresholded = (np.abs(z_atlas) > z_threshold).astype(int)
-        
-        # Count active voxels in each map
-        drawn_active_voxels = np.sum(drawn_thresholded)
-        atlas_active_voxels = np.sum(atlas_thresholded)
-        
         intersection = np.sum(drawn_thresholded & atlas_thresholded)
-        union = np.sum(drawn_thresholded) + np.sum(atlas_thresholded)
-        
+        union = drawn_active_voxels + atlas_active_voxels
+
         if union > 0:
             dice = (2.0 * intersection) / union
         else:
             dice = 0.0
-        
+
         # ===== SPATIAL CENTERING: CENTER OF MASS DISTANCE =====
         # Calculate CoM in voxel space using full 3D coordinates
         drawn_coords = np.array(region_coords)[:, drawn_thresholded.astype(bool)]
