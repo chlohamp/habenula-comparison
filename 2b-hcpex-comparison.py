@@ -99,6 +99,10 @@ for test_name, paths in maps_to_process.items():
         drawn_thresholded = (np.abs(z_drawn) > z_threshold).astype(int)
         atlas_thresholded = (np.abs(z_atlas) > z_threshold).astype(int)
         
+        # Count active voxels in each map
+        drawn_active_voxels = np.sum(drawn_thresholded)
+        atlas_active_voxels = np.sum(atlas_thresholded)
+        
         intersection = np.sum(drawn_thresholded & atlas_thresholded)
         union = np.sum(drawn_thresholded) + np.sum(atlas_thresholded)
         
@@ -154,6 +158,8 @@ for test_name, paths in maps_to_process.items():
             "HCPex_Region_ID": region_id,
             "Full_Label": label_mapping.get(region_id, "Unknown"),
             "Voxel_Count": voxel_count,
+            "Drawn_Active_Voxels": drawn_active_voxels,
+            "Atlas_Active_Voxels": atlas_active_voxels,
             "Dice_Coefficient": dice,
             "CoM_Distance_mm": com_distance,
             "Mean_Z_Atlas": mean_z_atlas,
@@ -171,5 +177,6 @@ for test_name, paths in maps_to_process.items():
     df_conn.to_csv(paths["output"], index=False)
     print(f"Saved regional connectivity comparison to: {paths['output']}")
     print("\nTop 5 regions (sorted by Mean Z-score of Atlas ROI):")
-    print(df_conn[["Full_Label", "Voxel_Count", "Dice_Coefficient", "CoM_Distance_mm", 
-                   "Mean_Z_Atlas", "Mean_Z_Drawn", "Percent_Difference", "Spearman_rho"]].head(5).to_string(index=False))
+    print(df_conn[["Full_Label", "Voxel_Count", "Drawn_Active_Voxels", "Atlas_Active_Voxels",
+                   "Dice_Coefficient", "CoM_Distance_mm", "Mean_Z_Atlas", "Mean_Z_Drawn", 
+                   "Spearman_rho"]].head(5).to_string(index=False))

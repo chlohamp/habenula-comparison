@@ -152,3 +152,8 @@ print("SUMMARY: VOXEL-BASED ANALYSIS")
 print(f"{'='*60}")
 df_results = pd.DataFrame(results)
 print(df_results.to_string(index=False))
+
+# Save results to CSV
+output_csv = op.join(analysis_dir, "voxel_comparison_summary.csv")
+df_results.to_csv(output_csv, index=False)
+print(f"\nResults saved to: {output_csv}")
