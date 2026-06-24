@@ -104,9 +104,20 @@ for test_name, paths in maps_to_process.items():
         region_coords = np.where(region_mask)
 
         # ===== SPATIAL SIMILARITY (THRESHOLDED) =====
-        # Suprathreshold voxel counts
-        drawn_active_voxels = int(np.sum(drawn_thresholded))
-        atlas_active_voxels = int(np.sum(atlas_thresholded))
+        # Suprathreshold voxel counts — total, positive, and negative separately
+        # Positive: suprathreshold voxels with positive Z-scores
+        # Negative: suprathreshold voxels with negative Z-scores
+        drawn_pos_mask = drawn_thresholded.astype(bool) & (z_drawn > 0)
+        drawn_neg_mask = drawn_thresholded.astype(bool) & (z_drawn < 0)
+        atlas_pos_mask = atlas_thresholded.astype(bool) & (z_atlas > 0)
+        atlas_neg_mask = atlas_thresholded.astype(bool) & (z_atlas < 0)
+
+        drawn_active_voxels      = int(np.sum(drawn_thresholded))
+        atlas_active_voxels      = int(np.sum(atlas_thresholded))
+        drawn_pos_voxels         = int(np.sum(drawn_pos_mask))
+        drawn_neg_voxels         = int(np.sum(drawn_neg_mask))
+        atlas_pos_voxels         = int(np.sum(atlas_pos_mask))
+        atlas_neg_voxels         = int(np.sum(atlas_neg_mask))
 
         # Dice Similarity Coefficient
         intersection = np.sum(drawn_thresholded & atlas_thresholded)
@@ -143,22 +154,36 @@ for test_name, paths in maps_to_process.items():
             com_distance = np.nan
         
         # ===== CONNECTIVITY EFFECT SIZES (UNTHRESHOLDED) =====
-        # 1. Calculate Mean Connectivity (Z-score) for the region
+        # Mean ± SD Z across all parcel voxels (unthresholded)
         mean_z_drawn = np.nanmean(z_drawn)
         mean_z_atlas = np.nanmean(z_atlas)
-        
-        # Calculate percent difference relative to atlas
+        sd_z_drawn   = np.nanstd(z_drawn)
+        sd_z_atlas   = np.nanstd(z_atlas)
+
+        # Mean ± SD Z restricted to suprathreshold positive voxels
+        mean_z_atlas_pos = np.nanmean(z_atlas[atlas_pos_mask]) if atlas_pos_voxels > 0 else np.nan
+        mean_z_drawn_pos = np.nanmean(z_drawn[drawn_pos_mask]) if drawn_pos_voxels > 0 else np.nan
+        sd_z_atlas_pos   = np.nanstd(z_atlas[atlas_pos_mask])  if atlas_pos_voxels > 0 else np.nan
+        sd_z_drawn_pos   = np.nanstd(z_drawn[drawn_pos_mask])  if drawn_pos_voxels > 0 else np.nan
+
+        # Mean ± SD Z restricted to suprathreshold negative voxels
+        mean_z_atlas_neg = np.nanmean(z_atlas[atlas_neg_mask]) if atlas_neg_voxels > 0 else np.nan
+        mean_z_drawn_neg = np.nanmean(z_drawn[drawn_neg_mask]) if drawn_neg_voxels > 0 else np.nan
+        sd_z_atlas_neg   = np.nanstd(z_atlas[atlas_neg_mask])  if atlas_neg_voxels > 0 else np.nan
+        sd_z_drawn_neg   = np.nanstd(z_drawn[drawn_neg_mask])  if drawn_neg_voxels > 0 else np.nan
+
+        # Calculate percent difference relative to atlas (full parcel mean)
         if mean_z_atlas != 0:
             percent_difference = (abs(mean_z_drawn - mean_z_atlas) / abs(mean_z_atlas)) * 100
         else:
             percent_difference = 0.0
-        
-        # 2. Calculate Spearman rank-order correlation
+
+        # Spearman rank-order correlation across all parcel voxels (unthresholded)
         if len(z_drawn) > 1 and np.std(z_drawn) > 0 and np.std(z_atlas) > 0:
             spearman_rho, _ = spearmanr(z_drawn, z_atlas)
         else:
             spearman_rho = np.nan
-            
+
         # Append data row
         conn_results.append({
             "HCPex_Region_ID": region_id,
@@ -166,10 +191,24 @@ for test_name, paths in maps_to_process.items():
             "Voxel_Count": voxel_count,
             "Drawn_Active_Voxels": drawn_active_voxels,
             "Atlas_Active_Voxels": atlas_active_voxels,
+            "Drawn_Pos_Voxels": drawn_pos_voxels,
+            "Atlas_Pos_Voxels": atlas_pos_voxels,
+            "Drawn_Neg_Voxels": drawn_neg_voxels,
+            "Atlas_Neg_Voxels": atlas_neg_voxels,
             "Dice_Coefficient": dice,
             "CoM_Distance_mm": com_distance,
             "Mean_Z_Atlas": mean_z_atlas,
+            "SD_Z_Atlas": sd_z_atlas,
             "Mean_Z_Drawn": mean_z_drawn,
+            "SD_Z_Drawn": sd_z_drawn,
+            "Mean_Z_Atlas_Pos": mean_z_atlas_pos,
+            "SD_Z_Atlas_Pos": sd_z_atlas_pos,
+            "Mean_Z_Drawn_Pos": mean_z_drawn_pos,
+            "SD_Z_Drawn_Pos": sd_z_drawn_pos,
+            "Mean_Z_Atlas_Neg": mean_z_atlas_neg,
+            "SD_Z_Atlas_Neg": sd_z_atlas_neg,
+            "Mean_Z_Drawn_Neg": mean_z_drawn_neg,
+            "SD_Z_Drawn_Neg": sd_z_drawn_neg,
             "Percent_Difference": percent_difference,
             "Spearman_rho": spearman_rho
         })
@@ -177,12 +216,19 @@ for test_name, paths in maps_to_process.items():
     # Save to CSV
     df_conn = pd.DataFrame(conn_results)
     
-    # Sort by Mean_Z_Atlas (descending: strongest connectivity first)
+    # Sort by Mean_Z_Atlas (descending: strongest positive to strongest negative connectivity)
     df_conn = df_conn.sort_values(by="Mean_Z_Atlas", ascending=False)
     
     df_conn.to_csv(paths["output"], index=False)
     print(f"Saved regional connectivity comparison to: {paths['output']}")
-    print("\nTop 5 regions (sorted by Mean Z-score of Atlas ROI):")
-    print(df_conn[["Full_Label", "Voxel_Count", "Drawn_Active_Voxels", "Atlas_Active_Voxels",
-                   "Dice_Coefficient", "CoM_Distance_mm", "Mean_Z_Atlas", "Mean_Z_Drawn", 
-                   "Spearman_rho"]].head(5).to_string(index=False))
+    cols = ["Full_Label", "Voxel_Count", "Drawn_Active_Voxels", "Atlas_Active_Voxels",
+            "Dice_Coefficient", "CoM_Distance_mm", "Mean_Z_Atlas", "Mean_Z_Drawn", "Spearman_rho"]
+    neg_cols = ["Full_Label", "Voxel_Count", "Drawn_Neg_Voxels", "Atlas_Neg_Voxels",
+                "Dice_Coefficient", "CoM_Distance_mm", "Mean_Z_Atlas_Neg", "Mean_Z_Drawn_Neg", "Spearman_rho"]
+
+    print("\nTop 5 positively connected regions:")
+    print(df_conn[cols].head(5).to_string(index=False))
+
+    neg_regions = df_conn[df_conn["Atlas_Neg_Voxels"] > 0].sort_values("Mean_Z_Atlas_Neg", ascending=True)
+    print("\nTop 5 negatively connected regions:")
+    print(neg_regions[neg_cols].head(5).to_string(index=False))
