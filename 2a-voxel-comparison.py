@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from nilearn import image
 from nilearn.reporting import get_clusters_table
-from scipy.stats import spearmanr
+from scipy.stats import pearsonr
 
 # ---------------------------------------------------------
 # 1. Define Paths 
@@ -63,7 +63,7 @@ for test_name, paths in maps_to_process.items():
     drawn_thresholded = (drawn_thresh_img.get_fdata() != 0).astype(int)
     atlas_thresholded = (atlas_thresh_img.get_fdata() != 0).astype(int)
     
-    # Load unthresholded maps for Spearman and Nilearn cluster extraction
+    # Load unthresholded maps for Pearson and Nilearn cluster extraction
     drawn_unthresh_img = image.load_img(paths["drawn_unthresholded"])
     atlas_unthresh_img = image.load_img(paths["atlas_unthresholded"])
     
@@ -97,15 +97,16 @@ for test_name, paths in maps_to_process.items():
     z_drawn_union = drawn_data[union_mask]
     z_atlas_union = atlas_data[union_mask]
     
-    # Spearman rank-order correlation
+    # Pearson linear correlation (maps are already Z-scored, so a linear correlation
+    # is appropriate here rather than the rank-based Spearman)
     if len(z_drawn_union) > 1:
-        spearman_rho, p_val = spearmanr(z_drawn_union, z_atlas_union)
+        pearson_r, p_val = pearsonr(z_drawn_union, z_atlas_union)
     else:
-        spearman_rho = np.nan
+        pearson_r = np.nan
         p_val = np.nan
-    
+
     print(f"\nConnectivity Effect Sizes (Unthresholded):")
-    print(f"  Spearman (rho) Correlation: {spearman_rho:.4f} (P < 0.001)")
+    print(f"  Pearson (r) Correlation: {pearson_r:.4f} (P < 0.001)")
     
     # ===== DATA-DRIVEN CLUSTER EXTRACTION (NILEARN) =====
     print(f"\nData-Driven Cluster Extraction (Nilearn):")
@@ -148,7 +149,7 @@ for test_name, paths in maps_to_process.items():
         "Drawn_Suprathreshold_Voxels": drawn_voxel_count,
         "Atlas_Suprathreshold_Voxels": atlas_voxel_count,
         "Dice_Coefficient": dice,
-        "Spearman_rho": spearman_rho,
+        "Pearson_r": pearson_r,
         "P_value": p_val
     })
 
