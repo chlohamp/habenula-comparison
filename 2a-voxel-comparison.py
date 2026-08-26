@@ -5,9 +5,13 @@ import pandas as pd
 from nilearn import image
 from nilearn.reporting import get_clusters_table
 from scipy.stats import pearsonr
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+sns.set_theme(style="whitegrid")
 
 # ---------------------------------------------------------
-# 1. Define Paths 
+# 1. Define Paths
 # ---------------------------------------------------------
 data_dir = "./dset"
 deriv_dir = op.join(data_dir, "derivatives")
@@ -48,28 +52,28 @@ for test_name, paths in maps_to_process.items():
     print(f"\n{'='*60}")
     print(f"ANALYSIS FOR {test_name.upper()} MAPS")
     print(f"{'='*60}")
-    
+
     # Check if files exist
-    required_files = [paths["drawn_thresholded"], paths["atlas_thresholded"], 
+    required_files = [paths["drawn_thresholded"], paths["atlas_thresholded"],
                       paths["drawn_unthresholded"], paths["atlas_unthresholded"]]
     if not all(op.exists(f) for f in required_files):
         print(f"Skipping {test_name}: One or more files not found.")
         continue
-    
+
     # Load thresholded maps for Dice calculation
     drawn_thresh_img = image.load_img(paths["drawn_thresholded"])
     atlas_thresh_img = image.load_img(paths["atlas_thresholded"])
-    
+
     drawn_thresholded = (drawn_thresh_img.get_fdata() != 0).astype(int)
     atlas_thresholded = (atlas_thresh_img.get_fdata() != 0).astype(int)
-    
+
     # Load unthresholded maps for Pearson and Nilearn cluster extraction
     drawn_unthresh_img = image.load_img(paths["drawn_unthresholded"])
     atlas_unthresh_img = image.load_img(paths["atlas_unthresholded"])
-    
+
     drawn_data = drawn_unthresh_img.get_fdata()
     atlas_data = atlas_unthresh_img.get_fdata()
-    
+
     # ===== SPATIAL SIMILARITY (THRESHOLDED) =====
     # Suprathreshold voxel counts
     drawn_voxel_count = int(np.sum(drawn_thresholded))
@@ -88,15 +92,15 @@ for test_name, paths in maps_to_process.items():
     print(f"  Suprathreshold Voxels (Subject-Specific): {drawn_voxel_count:,}")
     print(f"  Suprathreshold Voxels (Atlas-Based):      {atlas_voxel_count:,}")
     print(f"  Dice Similarity Coefficient: {dice:.4f}")
-    
+
     # ===== CONNECTIVITY EFFECT SIZES (UNTHRESHOLDED) =====
     # Union of nonzero voxels (voxels that are nonzero in either atlas or drawn)
     union_mask = ((drawn_data != 0) | (atlas_data != 0)).astype(bool)
-    
+
     # Extract Z-scores within union
     z_drawn_union = drawn_data[union_mask]
     z_atlas_union = atlas_data[union_mask]
-    
+
     # Pearson linear correlation (maps are already Z-scored, so a linear correlation
     # is appropriate here rather than the rank-based Spearman)
     if len(z_drawn_union) > 1:
@@ -107,10 +111,44 @@ for test_name, paths in maps_to_process.items():
 
     print(f"\nConnectivity Effect Sizes (Unthresholded):")
     print(f"  Pearson (r) Correlation: {pearson_r:.4f} (P < 0.001)")
-    
+
+    # ===== VOXEL-WISE EFFECT SIZE SCATTERPLOT (Figure 3) =====
+    # Seaborn scatterplot of unthresholded group Z-scores across the union of nonzero
+    # voxels, with an identity line, per the requested Figure 3.
+    rng = np.random.default_rng(0)
+    max_points = 60000
+    if len(z_atlas_union) > max_points:
+        idx = rng.choice(len(z_atlas_union), size=max_points, replace=False)
+        x_plot, y_plot = z_atlas_union[idx], z_drawn_union[idx]
+    else:
+        x_plot, y_plot = z_atlas_union, z_drawn_union
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    sns.scatterplot(x=x_plot, y=y_plot, s=4, alpha=0.12, color="#171744", ax=ax,
+                     linewidth=0, rasterized=True)
+    lims = [
+        min(z_atlas_union.min(), z_drawn_union.min()),
+        max(z_atlas_union.max(), z_drawn_union.max()),
+    ]
+    ax.plot(lims, lims, color="#E05454", linestyle="--", linewidth=1.5, label="Identity (y = x)")
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Atlas-Based Group Z-Score")
+    ax.set_ylabel("Subject-Specific Group Z-Score")
+    ax.set_title(f"Voxel-Wise Effect Size Agreement ({test_name.upper()})\n"
+                 f"(r = {pearson_r:.3f}, n = {len(z_atlas_union):,} voxels)")
+    ax.legend(frameon=False, loc="upper left")
+    sns.despine(ax=ax)
+    fig.tight_layout()
+    scatter_path = op.join(analysis_dir, f"voxelwise_effect_size_scatter_{test_name}.png")
+    fig.savefig(scatter_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Figure saved to: {scatter_path}")
+
     # ===== DATA-DRIVEN CLUSTER EXTRACTION (NILEARN) =====
     print(f"\nData-Driven Cluster Extraction (Nilearn):")
-    
+
     # Extract clusters for Hand-Drawn method
     try:
         drawn_cluster_table = get_clusters_table(
@@ -126,7 +164,7 @@ for test_name, paths in maps_to_process.items():
             print("    No clusters survived thresholding.")
     except Exception as e:
         print(f"  Error extracting Hand-Drawn clusters: {e}")
-        
+
     # Extract clusters for Automated Atlas method
     try:
         atlas_cluster_table = get_clusters_table(
@@ -142,7 +180,7 @@ for test_name, paths in maps_to_process.items():
             print("    No clusters survived thresholding.")
     except Exception as e:
         print(f"  Error extracting Atlas clusters: {e}")
-    
+
     # Store results
     results.append({
         "Test": test_name,

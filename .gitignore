@@ -1,3 +1,8 @@
-/dset/
-/.DS_Store
-/decoding
+# Only track top-level files/scripts that start with a number (the numbered
+# analysis pipeline: 1a, 1b, 2a, 2ai, 2aii, 2aiii, 2b, 2c, 3a, ...).
+# Everything else - docs, old scripts, virtualenvs, caches, data dirs, etc. -
+# is ignored. (Covers the previous /dset/, /decoding, /.DS_Store entries too,
+# since none of those start with a digit.)
+/*
+!/[0-9]*
+!/.gitignore
